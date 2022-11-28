@@ -149,15 +149,20 @@ interface IERC20 {
 }
 
 /**is IERC20, IERC20Metadata */
-contract TokenERC20_1 {
+contract TokenERC20_1 is IERC20, IERC20Metadata, AccessControlLearning {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
     uint256 totalMinted;
 
     // mapping de balances
-
+    mapping(address => uint256) balances_;
     // mapping de permisos
     // owner => spender => amount
+    mapping(address => mapping(address => uint256)) allowances_;
+
+    string name_;
+    string symbol_;
+    uint8 decimals_;
 
     // 3. Nombre, símbolo y decimales serán incluidos en el smart contract a través del constructor
     constructor(
@@ -165,28 +170,43 @@ contract TokenERC20_1 {
         string memory _symbol,
         uint8 _decimals
     ) {
-        // name_ = _name;
-        // symbol_ = _symbol;
-        // decimals_ = _decimals;
+        name_ = _name;
+        symbol_ = _symbol;
+        decimals_ = _decimals;
     }
 
     /////////////////////////////////////////////////////////////////////////////
     ///////////     2. Heredar la interface IERC20Metadata            ///////////
     /////////////////////////////////////////////////////////////////////////////
-    function name() public view returns (string memory) {}
+    function name() public view returns (string memory) {
+        return name_;
+    }
 
     // symbol
+    function symbol() public view returns (string memory) {
+        return symbol_;
+    }
 
     // decimals
+    function decimals() public view returns (uint8) {
+        return decimals_;
+    }
 
     /////////////////////////////////////////////////////////////////////////////
     ///////////         1.  Heredar la interface IERC20               ///////////
     /////////////////////////////////////////////////////////////////////////////
-    function totalSupply() public view returns (uint256) {}
+    function totalSupply() public view returns (uint256) {
+        return totalMinted;
+    }
 
-    function balanceOf(address account) public view returns (uint256) {}
+    function balanceOf(address account) public view returns (uint256) {
+        return balances_[account];
+    }
 
     function transfer(address to, uint256 amount) public returns (bool) {
+        balances_[msg.sender] = balances_[msg.sender] - amount;
+        balances_[to] = balances_[to] + amount;
+        emit Transfer(msg.sender, to, amount);
         return true;
     }
 
@@ -194,9 +214,14 @@ contract TokenERC20_1 {
         public
         view
         returns (uint256)
-    {}
+    {
+        return allowances_[owner][spender];
+    }
 
     function approve(address spender, uint256 amount) public returns (bool) {
+        require(spender != address(0), "Spender no puede ser zero");
+        allowances_[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
         return true;
     }
 
@@ -205,6 +230,17 @@ contract TokenERC20_1 {
         address to,
         uint256 amount
     ) public returns (bool) {
+        require(from != address(0), "Spender no puede ser zero");
+        require(to != address(0), "Spender no puede ser zero");
+        require(balances_[from] >= amount, "Insuficientes tokens");
+        require(
+            allowances_[from][msg.sender] >= amount,
+            "No tiene permiso para transferir"
+        );
+        balances_[from] -= amount;
+        balances_[to] += amount;
+        allowances_[from][msg.sender] -= amount;
+        emit Transfer(from, to, amount);
         return true;
     }
 
@@ -213,15 +249,68 @@ contract TokenERC20_1 {
     /////////////////////////////////////////////////////////////////////////////
 
     // 3. mint
-    function mint(address to, uint256 amount) public {}
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) public returns (bool) {
+        require(from != address(0), "Spender no puede ser zero");
+        require(to != address(0), "Spender no puede ser zero");
+        require(balances_[from] >= amount, "Insuficientes tokens");
+        require(
+            allowances_[from][msg.sender] >= amount,
+            "No tiene permiso para transferir"
+        );
+        balances_[from] -= amount;
+        balances_[to] += amount;
+        allowances_[from][msg.sender] -= amount;
+        emit Transfer(from, to, amount);
+        return true;
+    }
 
     // 4. burn
-    function burn(uint256 amount) public {}
+    function burn(uint256 amount) public {
+        require(
+            balances_[msg.sender] != 0,
+            "Cuenta no tiene suficientes tokens"
+        );
+        balances_[msg.sender] -= amount;
+        totalMinted -= amount;
+        emit Transfer(msg.sender, address(0), amount);
+    }
 
     // EXTRA
     // function decreaseAllowance(address spender, uint256 subtractedValue) public returns (bool){}
+    function decreaseAllowance(address spender, uint256 subtractedValue)
+        public
+        returns (bool)
+    {
+        require(spender != address(0), "Spender no puede ser zero");
+        require(
+            allowances_[msg.sender][spender] >= subtractedValue,
+            "Cuenta no tiene suficientes tokens"
+        );
+        allowances_[msg.sender][spender] -= subtractedValue;
+        emit Approval(msg.sender, spender, allowances_[msg.sender][spender]);
+        return true;
+    }
 
     // function increaseAllowance(address spender, uint256 addedValue) public  returns (bool){}
+    function increaseAllowance(address spender, uint256 addedValue)
+        public
+        returns (bool)
+    {
+        require(spender != address(0), "Spender no puede ser zero");
+        allowances_[msg.sender][spender] += addedValue;
+        emit Approval(msg.sender, spender, allowances_[msg.sender][spender]);
+        return true;
+    }
 
     // function mintProtected(address to, uint256 amount) public onlyRole(MINTER_ROLE) {}
+    function mintProtected(address to, uint256 amount)
+        public
+        onlyRole(MINTER_ROLE)
+    {
+        mint(to, amount);
+    }
 }
